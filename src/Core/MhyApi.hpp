@@ -137,9 +137,14 @@ QueryQRLoginStatus(const std::string_view ticket)
     }
 
     std::string token{};
+    std::string types{};
     if (data.contains("tokens") && data["tokens"].is_array() && !data["tokens"].empty())
     {
         token = data["tokens"][0].value("token", "");
+        for (const auto& t : data["tokens"])
+        {
+            types += std::format("{}:len{} ", t.value("token_type", -1), t.value("token", std::string{}).size());
+        }
     }
 
     std::string mid{}, aid{}, name{};
@@ -150,6 +155,11 @@ QueryQRLoginStatus(const std::string_view ticket)
         aid = info.value("aid", "");
         name = info.value("account_name", "");
     }
+
+    /* 诊断：只记录 token 类型与长度、以及 aid/mid 长度，不记录任何凭据值 */
+    LogScanDebug("qrConfirmed", "tokens/user_info",
+                 std::format("tokens=[{}] aid_len={} mid_len={} name_len={}", types, aid.size(), mid.size(), name.size()),
+                 "n/a");
 
     return { LoginQRCodeState::Confirmed, token, aid, mid, name };
 }
@@ -496,6 +506,33 @@ inline void DiagnoseConfirmQRLogin(const std::string_view passportQrUrl,
         }
         const auto response = cpr::Post(cpr::Url{ v.endpoint }, cpr::Body{ v.body }, header);
         LogScanDebug(v.tag, v.endpoint, v.body, response.text);
+    }
+}
+
+/* 诊断：用账号的真实 stoken/mid 探测两条换取 game token 的路径，
+   只记录 retcode/message 与长度，不记录凭据值。 */
+inline void DiagnoseStoken(const std::string_view stoken, const std::string_view mid,
+                           const std::string_view uid)
+{
+    const std::string lenInfo{ std::format("stoken_len={} mid_len={} uid_len={}", stoken.size(), mid.size(), uid.size()) };
+
+    const auto r1 = cpr::Get(cpr::Url{ api::mhy::takumi::cookie_account_info_by_stoken },
+                             cpr::Parameters{ { "stoken", stoken.data() }, { "mid", mid.data() } },
+                             GetRequestHeader());
+    LogScanDebug("CheckStoken(getCookieAccountInfoBySToken)", "takumi", lenInfo, r1.text);
+
+    const auto r2 = cpr::Get(cpr::Url{ api::mhy::takumi::game_token },
+                             cpr::Parameters{ { "stoken", stoken.data() }, { "mid", mid.data() } },
+                             GetRequestHeader());
+    LogScanDebug("GetGameToken(旧中转)", "takumi", lenInfo, r2.text);
+
+    for (const char* biz : { "hk4e_cn", "hkrpg_cn", "nap_cn", "bh3_cn" })
+    {
+        const auto r3 = cpr::Post(
+            cpr::Url{ "https://passport-api.mihoyo.com/account/ma-cn-verifier/app/createAuthTicketByGameBiz" },
+            cpr::Parameters{ { "game_biz", biz }, { "stoken", stoken.data() }, { "uid", uid.data() }, { "mid", mid.data() } },
+            cpr::Header{ { "x-rpc-client_type", "3" }, { "x-rpc-app_id", "ddxf5dufpuyo" }, { "x-rpc-device_id", device_id } });
+        LogScanDebug(biz, "passport/createAuthTicketByGameBiz", lenInfo, r3.text);
     }
 }
 
