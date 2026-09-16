@@ -343,35 +343,104 @@ inline auto LoginByMobileCaptcha(const std::string_view actionType, const std::s
     return result;
 }
 
-inline bool ScanQRLogin(const std::string_view url, const std::string_view ticket, GameType gameType)
-{
-    const auto response = cpr::Post(
-        cpr::Url{ url },
-        cpr::Body{ nlohmann::json{
-            { "app_id", static_cast<int>(gameType) },
-            { "device", device_id },
-            { "ticket", ticket } }
-                       .dump() },
-        cpr::Header{ { "Content-Type", "application/json" } });
+/* ---------------------------------------------------------------------- *
+ * 扫码确认登录（监视屏幕 / 监视直播间）
+ *
+ * 新版流程（1.16.0 起）：
+ *   1. 从扫到的二维码 URL 里解析出 tk 与 token_types；
+ *   2. 带上账号 Cookie（stoken=...; mid=...）调 passport 的
+ *      /account/ma-cn-passport/app/scanQRLogin 标记已扫码；
+ *   3. 再调 /app/confirmQRLogin 确认登录。
+ *
+ * 旧的一套（各游戏 api-sdk 的 combo/panda/qrcode/scan + confirm，以及
+ * api-takumi 的 getGameToken 换 token）已经失效 —— 这正是"一点击监视屏幕/
+ * 直播间就弹登录状态失效"的原因。新版不再需要 game_token 中转，直接用
+ * 账号自己的 stoken/mid 作为 Cookie。
+ * ---------------------------------------------------------------------- */
 
-    const auto j = nlohmann::json::parse(response.text);
-    return j.value("retcode", -1) == 0;
+/* 从扫码得到的 URL 里取出 tk 与 token_types（旧格式回退到 ticket=） */
+inline std::pair<std::string, std::string> ParseQrTicket(const std::string_view url)
+{
+    std::string ticket{};
+    std::string tokenTypes{};
+
+    auto takeParam = [&url](const std::string_view name) -> std::string {
+        const std::string pattern{ std::string(name) + "=" };
+        const size_t pos = url.find(pattern);
+        if (pos == std::string_view::npos)
+        {
+            return {};
+        }
+        const size_t begin = pos + pattern.size();
+        size_t end = url.find_first_of("&#", begin);
+        if (end == std::string_view::npos)
+        {
+            end = url.size();
+        }
+        return std::string{ url.substr(begin, end - begin) };
+    };
+
+    ticket = takeParam("tk");
+    if (ticket.empty())
+    {
+        ticket = takeParam("ticket");
+    }
+    tokenTypes = takeParam("token_types");
+
+    return { ticket, tokenTypes };
 }
 
-inline bool ConfirmQRLogin(const std::string_view url, const std::string_view uid, const std::string_view gameToken, const std::string_view ticket, GameType gameType)
+/* 用账号的 stoken 校验登录状态是否仍然有效（取代已失效的 getGameToken 中转） */
+inline bool CheckStokenValid(const std::string_view stoken, const std::string_view mid)
+{
+    const auto response = cpr::Get(
+        cpr::Url{ api::mhy::takumi::cookie_account_info_by_stoken },
+        cpr::Parameters{ { "stoken", stoken.data() }, { "mid", mid.data() } },
+        GetRequestHeader());
+
+    const auto j = nlohmann::json::parse(response.text, nullptr, false);
+    return !j.is_discarded() && j.value("retcode", -1) == 0;
+}
+
+/* 新接口共用：Cookie 里带账号的 stoken/mid，头里带 web 的 app id */
+inline cpr::Header GetScanConfirmHeader(const std::string_view stoken, const std::string_view mid)
+{
+    return cpr::Header{
+        { "Content-Type", "application/json" },
+        { "x-rpc-app_id", "bll8iq97cem8" },
+        { "x-rpc-device_id", device_id },
+        { "Cookie", std::format("stoken={}; mid={}", stoken, mid) }
+    };
+}
+
+inline bool ScanQRLogin(const std::string_view ticket, const std::string_view tokenTypes,
+                        const std::string_view stoken, const std::string_view mid)
 {
     const auto response = cpr::Post(
-        cpr::Url{ url },
+        cpr::Url{ api::mhy::passport::app_scan_qr_login },
         cpr::Body{ nlohmann::json{
-            { "app_id", static_cast<int>(gameType) },
-            { "device", device_id },
             { "ticket", ticket },
-            { "payload", { { "proto", "Account" }, { "raw", nlohmann::json{ { "uid", uid }, { "token", gameToken } }.dump() } } } }
+            { "token_types", tokenTypes } }
                        .dump() },
-        cpr::Header{ { "Content-Type", "application/json" } });
+        GetScanConfirmHeader(stoken, mid));
 
-    const auto j = nlohmann::json::parse(response.text);
-    return j.value("retcode", -1) == 0;
+    const auto j = nlohmann::json::parse(response.text, nullptr, false);
+    return !j.is_discarded() && j.value("retcode", -1) == 0;
+}
+
+inline bool ConfirmQRLogin(const std::string_view ticket, const std::string_view tokenTypes,
+                           const std::string_view stoken, const std::string_view mid)
+{
+    const auto response = cpr::Post(
+        cpr::Url{ api::mhy::passport::app_confirm_qr_login },
+        cpr::Body{ nlohmann::json{
+            { "ticket", ticket },
+            { "token_types", tokenTypes } }
+                       .dump() },
+        GetScanConfirmHeader(stoken, mid));
+
+    const auto j = nlohmann::json::parse(response.text, nullptr, false);
+    return !j.is_discarded() && j.value("retcode", -1) == 0;
 }
 
 inline std::string makeSign(const nlohmann::json& data)

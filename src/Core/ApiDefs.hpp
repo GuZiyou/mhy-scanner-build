@@ -116,6 +116,8 @@ constexpr compile_string base{ "https://api-takumi.mihoyo.com" };
 constexpr auto multi_token = base + compile_string{ "/auth/api/getMultiTokenByLoginTicket" };
 constexpr auto game_token = base + compile_string{ "/auth/api/getGameToken" };
 constexpr auto game_token_stoken = base + compile_string{ "/account/ma-cn-session/app/getTokenByGameToken" };
+/* 校验 stoken 是否有效（1.16.0 用它取代了已失效的 getGameToken 中转） */
+constexpr auto cookie_account_info_by_stoken = base + compile_string{ "/auth/api/getCookieAccountInfoBySToken" };
 }
 
 namespace passport

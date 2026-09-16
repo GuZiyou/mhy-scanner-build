@@ -1,4 +1,4 @@
-﻿#include "WindowMain.h"
+#include "WindowMain.h"
 
 #include <fstream>
 #include <filesystem>
@@ -212,14 +212,17 @@ void WindowMain::pBtstartScreen(bool clicked)
             std::string stoken = userinfo["account"][countA]["access_key"];
             std::string uid = userinfo["account"][countA]["uid"];
             std::string mid = userinfo["account"][countA]["mid"];
-            auto [code, game_token] = GetGameTokenByStoken(stoken, mid);
-            if (code != 0)
+            /* 新版用 getCookieAccountInfoBySToken 校验账号；
+               旧版这里调的是已失效的 getGameToken 换 token，
+               会在"一点击监视屏幕"时直接弹「登录状态失效」。 */
+            if (!CheckStokenValid(stoken, mid))
             {
                 emit AccountError();
                 return;
             }
+            t1.mid = mid;
             t1.setServerType(ServerType::Official);
-            t1.setLoginInfo(uid, game_token);
+            t1.setLoginInfo(uid, stoken);
         }
         else if (type == "崩坏3B服")
         {
@@ -275,14 +278,15 @@ void WindowMain::pBtStream(bool clicked)
             std::string stoken = userinfo["account"][countA]["access_key"];
             std::string uid = userinfo["account"][countA]["uid"];
             std::string mid = userinfo["account"][countA]["mid"];
-            auto [code, game_token] = GetGameTokenByStoken(stoken, mid);
-            if (code != 0)
+            /* 同上：改用新接口校验账号，避免一点击就弹「登录状态失效」 */
+            if (!CheckStokenValid(stoken, mid))
             {
                 emit AccountError();
                 return;
             }
+            t2.mid = mid;
             t2.setServerType(ServerType::Official);
-            t2.setLoginInfo(uid, game_token);
+            t2.setLoginInfo(uid, stoken);
         }
         else if (type == "崩坏3B服")
         {

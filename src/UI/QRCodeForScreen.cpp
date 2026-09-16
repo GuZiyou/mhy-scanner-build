@@ -1,4 +1,4 @@
-﻿#include "QRCodeForScreen.h"
+#include "QRCodeForScreen.h"
 
 #include <chrono>
 #include <thread>
@@ -79,8 +79,10 @@ void QRCodeForScreen::LoginOfficial()
                 return;
             }
             setGameType[view]();
-            const std::string_view ticket(str.data() + str.size() - 24, 24);
-            if (lastTicket == ticket)
+            /* 新版扫码流程：从二维码 URL 解析 tk / token_types，
+               确认时用账号的 stoken/mid 作 Cookie（旧的 game_token 中转已失效） */
+            const auto [ticket, tokenTypes] = ParseQrTicket(str);
+            if (ticket.empty() || lastTicket == ticket)
             {
                 return;
             }
@@ -91,9 +93,10 @@ void QRCodeForScreen::LoginOfficial()
                     mtx.unlock();
                     return;
                 }
-                if (ScanQRLogin(scanUrl.data(), ticket, gameType))
+                if (ScanQRLogin(ticket, tokenTypes, gameToken, mid))
                 {
                     lastTicket = ticket;
+                    lastTokenTypes = tokenTypes;
                     nlohmann::json config = nlohmann::json::parse(m_config->getConfig());
                     if (config["auto_login"])
                     {
@@ -198,7 +201,7 @@ void QRCodeForScreen::continueLastLogin()
         using enum ServerType;
     case Official:
     {
-        bool b = ConfirmQRLogin(confirmUrl, uid, gameToken, lastTicket, gameType);
+        bool b = ConfirmQRLogin(lastTicket, lastTokenTypes, gameToken, mid);
         if (b)
         {
             Q_EMIT loginResults(ScanRet::SUCCESS);

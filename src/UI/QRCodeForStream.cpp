@@ -258,9 +258,9 @@ void QRCodeForStream::LoginOfficial()
                 {
                     return;
                 }
-                const std::string_view ticket(str.data() + str.size() - 24, 24);
+                const auto [ticket, tokenTypes] = ParseQrTicket(str);
                 setGameType[view]();
-                if (lastTicket == ticket)
+                if (ticket.empty() || lastTicket == ticket)
                 {
                     return;
                 }
@@ -271,9 +271,11 @@ void QRCodeForStream::LoginOfficial()
                         mtx.unlock();
                         return;
                     }
-                    if (ScanQRLogin(scanUrl.data(), ticket, gameType))
+                    /* 新版：Cookie 用账号的 stoken/mid（旧的 game_token 中转已失效） */
+                    if (ScanQRLogin(ticket, tokenTypes, gameToken, mid))
                     {
                         lastTicket = ticket;
+                        lastTokenTypes = tokenTypes;
                         nlohmann::json config = nlohmann::json::parse(m_config->getConfig());
                         if (config["auto_login"])
                         {
@@ -495,7 +497,7 @@ void QRCodeForStream::continueLastLogin()
         using enum ServerType;
     case Official:
     {
-        bool b = ConfirmQRLogin(confirmUrl, uid, gameToken, lastTicket, gameType);
+        bool b = ConfirmQRLogin(lastTicket, lastTokenTypes, gameToken, mid);
         if (b)
         {
             Q_EMIT loginResults(ScanRet::SUCCESS);
