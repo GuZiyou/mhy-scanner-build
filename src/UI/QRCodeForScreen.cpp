@@ -79,10 +79,9 @@ void QRCodeForScreen::LoginOfficial()
                 return;
             }
             setGameType[view]();
-            /* 新版扫码流程：从二维码 URL 解析 tk / token_types，
-               确认时用账号的 stoken/mid 作 Cookie（旧的 game_token 中转已失效） */
-            const auto [ticket, tokenTypes] = ParseQrTicket(str);
-            if (ticket.empty() || lastTicket == ticket)
+            /* 恢复原版 1.16.0：ticket 就是二维码链接末尾 24 个字符 */
+            const std::string_view ticket(str.data() + str.size() - 24, 24);
+            if (lastTicket == ticket)
             {
                 return;
             }
@@ -93,14 +92,9 @@ void QRCodeForScreen::LoginOfficial()
                     mtx.unlock();
                     return;
                 }
-                /* ① 游戏侧 scan → passport_qr_url（成功即"已扫码"）
-                   ② passport scanQRLogin 仅标记，失败不致命
-                   ③ 确认在 confirmQRLogin */
-                const std::string passportQrUrl = PandaScanQRCode(scanUrl.data(), ticket, gameType);
-                if (!passportQrUrl.empty())
+                if (ScanQRLogin(scanUrl.data(), ticket, gameType))
                 {
                     lastTicket = ticket;
-                    lastPassportQrUrl = passportQrUrl;
                     nlohmann::json config = nlohmann::json::parse(m_config->getConfig());
                     if (config["auto_login"])
                     {
@@ -205,10 +199,8 @@ void QRCodeForScreen::continueLastLogin()
         using enum ServerType;
     case Official:
     {
-        /* 先换当前游戏的 game auth ticket（token 必须是它，不能直接用 stoken） */
-        const std::string authTicket{ CreateAuthTicketByGameBiz(GameBizOf(gameType), gameToken, uid, mid) };
-        bool b = PandaConfirmQRLogin(confirmUrl, uid, authTicket.empty() ? gameToken : authTicket,
-                                     lastTicket, gameType);
+        /* uid 与 gameToken 必须同属一个游戏账号（uid 是游戏内 uid） */
+        bool b = ConfirmQRLogin(confirmUrl, uid, gameToken, lastTicket, gameType);
         if (b)
         {
             Q_EMIT loginResults(ScanRet::SUCCESS);

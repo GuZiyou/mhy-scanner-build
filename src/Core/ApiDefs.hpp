@@ -118,6 +118,10 @@ constexpr auto game_token = base + compile_string{ "/auth/api/getGameToken" };
 constexpr auto game_token_stoken = base + compile_string{ "/account/ma-cn-session/app/getTokenByGameToken" };
 /* 校验 stoken 是否有效（1.16.0 用它取代了已失效的 getGameToken 中转） */
 constexpr auto cookie_account_info_by_stoken = base + compile_string{ "/auth/api/getCookieAccountInfoBySToken" };
+/* 各游戏的【角色绑定】：返回列表里带 game_uid / region / nickname，
+   也就是游戏端 confirm 需要的那个"游戏内 uid"（不是米游社 aid）。 */
+constexpr auto get_user_game_roles_by_stoken = base + compile_string{ "/binding/api/getUserGameRolesByStoken" };
+constexpr auto get_user_game_roles_by_cookie = base + compile_string{ "/binding/api/getUserGameRolesByCookie" };
 }
 
 namespace passport
@@ -127,18 +131,21 @@ constexpr auto create_captcha = base + compile_string{ "/account/ma-cn-verifier/
 constexpr auto login_by_mobile_captcha = base + compile_string{ "/account/ma-cn-passport/app/loginByMobileCaptcha" };
 
 /*
- * 新的统一扫码登录接口（1.16.0 起在用）。
+ * ★ 重要更正（2026-09 复测）：
+ * 下面这条注释以前写的是"旧 combo/panda 接口已失效"，那是错的 —— 当时的 -502
+ * 是 Windows curl.exe 被米哈游网关拒绝造成的假象。用 .NET/Java 客户端复测：
+ *     POST https://hk4e-sdk.mihoyo.com/hk4e_cn/combo/panda/qrcode/fetch
+ *         {"app_id":4,"device":"<uuid4>"}
+ *     -> {"retcode":0,...,"url":"https://user.mihoyo.com/qr_code_in_game.html?...&ticket=<24位>"}
+ *     POST .../combo/panda/qrcode/query   -> {"retcode":0,"data":{"stat":"Init",...}}
+ *     POST https://api-sdk.mihoyo.com/hk4e_cn/combo/panda/qrcode/scan   -> 存活（假票 -106）
+ *     GET  https://api-takumi.mihoyo.com/auth/api/getGameToken?stoken=&mid=  -> 存活（假票 -100）
+ * 也就是说原版 1.16.0 那条"游戏二维码"链路完全可用，添加账号必须走它：
+ * 只有它才能拿到【游戏内 uid + 游戏 token】这一对凭据。
  *
- * 旧的一套 combo/panda 接口（hk4e-sdk 的 qrcode/fetch、query 与各游戏
- * api-sdk 的 qrcode/scan、confirm）已经失效：fetch 实测返回
- * {"retcode":-502,"message":"Something went wrong..."}，这也是"无法添加账号 /
- * 扫码后提示登录状态失效"的根因。
- *
- * 这套 /app/ 接口要求三个请求头：
- *     Content-Type:     application/json
- *     x-rpc-app_id:     <passport_app_id>   （见下方常量，注意不是 web 用的 bll8iq97cem8）
- *     x-rpc-device_id:  <设备 id>
- * 不需要 DS 签名，也不需要 Cookie。
+ * 下面这套 /app/ 接口是【网页扫码登录】场景，返回的是米游社 aid + stoken，
+ * 拿它去游戏端 confirm 会被判"登录状态失效"（游戏端要的是游戏 uid + 游戏 token）。
+ * 保留仅作参考，不要再用于添加账号。
  */
 constexpr auto app_create_qr_login = base + compile_string{ "/account/ma-cn-passport/app/createQRLogin" };
 constexpr auto app_query_qr_login_status = base + compile_string{ "/account/ma-cn-passport/app/queryQRLoginStatus" };

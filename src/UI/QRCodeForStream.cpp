@@ -258,9 +258,10 @@ void QRCodeForStream::LoginOfficial()
                 {
                     return;
                 }
-                const auto [ticket, tokenTypes] = ParseQrTicket(str);
+                /* 恢复原版 1.16.0：ticket 就是二维码链接末尾 24 个字符 */
+                const std::string_view ticket(str.data() + str.size() - 24, 24);
                 setGameType[view]();
-                if (ticket.empty() || lastTicket == ticket)
+                if (lastTicket == ticket)
                 {
                     return;
                 }
@@ -271,15 +272,9 @@ void QRCodeForStream::LoginOfficial()
                         mtx.unlock();
                         return;
                     }
-                    /* ① 游戏侧 scan（带 passport_app_id / ts）拿到 passport_qr_url，
-                       这一步成功即代表"已扫码"；
-                       ② passport scanQRLogin 只是标记，失败不致命；
-                       ③ 真正的确认在后面的 confirmQRLogin（自动登录或用户点确认时） */
-                    const std::string passportQrUrl = PandaScanQRCode(scanUrl.data(), ticket, gameType);
-                    if (!passportQrUrl.empty())
+                    if (ScanQRLogin(scanUrl.data(), ticket, gameType))
                     {
                         lastTicket = ticket;
-                        lastPassportQrUrl = passportQrUrl;
                         nlohmann::json config = nlohmann::json::parse(m_config->getConfig());
                         if (config["auto_login"])
                         {
@@ -501,10 +496,8 @@ void QRCodeForStream::continueLastLogin()
         using enum ServerType;
     case Official:
     {
-        /* 先换当前游戏的 game auth ticket（token 必须是它，不能直接用 stoken） */
-        const std::string authTicket{ CreateAuthTicketByGameBiz(GameBizOf(gameType), gameToken, uid, mid) };
-        bool b = PandaConfirmQRLogin(confirmUrl, uid, authTicket.empty() ? gameToken : authTicket,
-                                     lastTicket, gameType);
+        /* uid 与 gameToken 必须同属一个游戏账号（uid 是游戏内 uid） */
+        bool b = ConfirmQRLogin(confirmUrl, uid, gameToken, lastTicket, gameType);
         if (b)
         {
             Q_EMIT loginResults(ScanRet::SUCCESS);
