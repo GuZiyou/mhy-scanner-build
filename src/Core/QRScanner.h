@@ -27,14 +27,25 @@ public:
     /*
      * 扫描强度：越往后越"兜底"，单帧成本也越高。
      *
-     *   Fast   —— 直播流/抢码专用。只跑 ZBar 的短阶梯（原图 / 反色 / Otsu /
-     *             中心裁剪放大），不跑任何兜底引擎。单帧只有几毫秒，
-     *             代价是放弃了"ZBar 全都认不出、但 DNN 能认出"的极小概率情形。
-     *   Normal —— 默认。完整预处理阶梯 + OpenCV QRCodeDetector 兜底，
-     *             适合屏幕扫描（图像干净、不需要抢时间）。
+     *   Fast   —— **默认**。直播流与屏幕扫描都用它：只跑 ZBar 的短阶梯
+     *             （原图 / 反色 / Otsu / 中心裁剪放大 / 小图才全图放大），
+     *             不跑任何兜底引擎。
+     *   Normal —— 完整预处理阶梯 + OpenCV QRCodeDetector 兜底。召回率更高，
+     *             但"画面里没有二维码"时非常贵，慎用。
      *   Full   —— Normal 再挂上 WeChatQRCode（检测 CNN + 超分 CNN + zxing 复解），
-     *             即上游原方案。**单帧可能上百毫秒，且只在"没扫到"时最贵**，
-     *             除非确实需要，否则不要打开。
+     *             即上游原方案。
+     *
+     * 实测（CI 产物 scan_test.exe，灰度输入，平均耗时）：
+     *
+     *   样本                     Fast      Normal     Full
+     *   1080p 有码（命中）       13 ms     24 ms      24 ms
+     *   1440p 有码（命中）       12 ms     27 ms      27 ms
+     *   1080p 无码（渐变）       32 ms     239 ms     252 ms
+     *   1080p 无码（噪声，最坏） 110 ms    1118 ms    1148 ms
+     *
+     * 关键点：直播/屏幕监看时绝大多数帧都是"无码"帧，而 Normal 在这一路径上
+     * 慢一个数量级（它会把 1920 宽的帧放大到 2880 再反复做全图滤波）。
+     * 所以默认值是 Fast；只有确实遇到 ZBar 认不出的码，才临时切 Normal / Full。
      */
     enum class ScanMode
     {
@@ -106,7 +117,7 @@ private:
     void ensureWeChat();
 
     ZBarApi m_zbar{};
-    ScanMode m_mode{ ScanMode::Normal };
+    ScanMode m_mode{ ScanMode::Fast };   ///< 默认 Fast：直播流与屏幕扫描都走 ZBar 短阶梯
     std::string m_lastEngine{ "none" };
     std::vector<std::string> m_results;
 

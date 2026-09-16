@@ -10,12 +10,16 @@
  *     cmake --build build --config Release --target scan_test
  *
  * 运行（注意把 exe 和 libzbar64-0.dll 放在同一目录）：
- *     scan_test ..\..\doc\image\hk4e_qrcode_1080.png ..\..\2\1\oldsix.jpg
+ *     scan_test ..\..\doc\image\hk4e_qrcode_1080.png ..\..\doc\image\zzz_qrcode_1440.png
  *
  * 常用参数：
- *     --mode fast|normal|full   扫描强度（默认 normal；fast = 直播流那档）
+ *     --mode fast|normal|full   扫描强度（默认 fast，与程序一致；
+ *                               ZBar 认不出的图再用 normal / full 提高召回）
  *     --gray                    按灰度读图（模拟直播流 Y 平面直通的输入）
  *     --repeat N                每张图重复 N 次，输出单帧最小/平均耗时
+ *
+ * 提示：想量"扫不到"时的开销，就拿一张**没有二维码**的图来跑——
+ *       直播/屏幕监看时这才是绝大多数帧的真实情况。
  */
 
 #include <algorithm>
@@ -81,7 +85,7 @@ double elapsedMs(const std::chrono::high_resolution_clock::time_point& start,
 
 int main(int argc, char** argv)
 {
-    QRScanner::ScanMode mode = QRScanner::ScanMode::Normal;
+    QRScanner::ScanMode mode = QRScanner::ScanMode::Fast;   // 与程序默认一致
     int repeat = 1;
     int readFlags = cv::IMREAD_COLOR;
     std::vector<std::string> paths;
