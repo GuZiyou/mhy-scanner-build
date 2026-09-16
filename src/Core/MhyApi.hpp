@@ -409,7 +409,7 @@ inline cpr::Header GetScanConfirmHeader(const std::string_view stoken, const std
         { "Content-Type", "application/json" },
         { "x-rpc-app_id", "bll8iq97cem8" },
         { "x-rpc-device_id", device_id },
-        { "Cookie", std::format("stoken={}; mid={}", stoken, mid) }
+        { "Cookie", std::format("stoken={};mid={}", stoken, mid) }
     };
 }
 

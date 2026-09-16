@@ -271,11 +271,14 @@ void QRCodeForStream::LoginOfficial()
                         mtx.unlock();
                         return;
                     }
-                    /* ① 先调游戏侧 scan（带 passport_app_id / ts）拿 passport_qr_url
-                       ② 再用账号的 stoken/mid 作为 Cookie 调 passport scanQRLogin */
+                    /* ① 游戏侧 scan（带 passport_app_id / ts）拿到 passport_qr_url，
+                       这一步成功即代表"已扫码"；
+                       ② passport scanQRLogin 只是标记，失败不致命；
+                       ③ 真正的确认在后面的 confirmQRLogin（自动登录或用户点确认时） */
                     const std::string passportQrUrl = PandaScanQRCode(scanUrl.data(), ticket, gameType);
-                    if (!passportQrUrl.empty() && ScanQRLogin(passportQrUrl, gameToken, mid))
+                    if (!passportQrUrl.empty())
                     {
+                        (void)ScanQRLogin(passportQrUrl, gameToken, mid);
                         lastTicket = ticket;
                         lastPassportQrUrl = passportQrUrl;
                         nlohmann::json config = nlohmann::json::parse(m_config->getConfig());
