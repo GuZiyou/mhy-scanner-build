@@ -516,50 +516,33 @@ inline void DiagnoseConfirmQRLogin(const std::string_view passportQrUrl,
     }
 }
 
-/* 诊断（B 方案）：用账号真实的 stoken/mid 探测
-   ① getCookieAccountInfoBySToken
-   ② auth/api/getGameToken（原版换 game token 用的接口）
-   ③ binding/api/getUserGameRolesByStoken / ByCookie —— 这里才可能给出【各游戏内的 game_uid】
-   只写进 ./Config/api_debug.log，不写任何凭据值本身。 */
+/* 诊断：用账号的真实 stoken/mid 探测两条换取 game token 的路径，
+   只记录 retcode/message 与长度，不记录凭据值。 */
 inline void DiagnoseStoken(const std::string_view stoken, const std::string_view mid,
                            const std::string_view uid)
 {
-    const std::string lenInfo{ std::format("stoken_len={} mid_len={} uid_len={} uid={}",
-                                           stoken.size(), mid.size(), uid.size(), uid) };
-    const std::string cookie{ std::format("stoken={};mid={}", stoken, mid) };
+    const std::string lenInfo{ std::format("stoken_len={} mid_len={} uid_len={}", stoken.size(), mid.size(), uid.size()) };
 
-    /* ① 账号信息 */
     const auto r1 = cpr::Get(cpr::Url{ api::mhy::takumi::cookie_account_info_by_stoken },
                              cpr::Parameters{ { "stoken", stoken.data() }, { "mid", mid.data() } },
                              GetRequestHeader());
-    LogScanDebug("B1 getCookieAccountInfoBySToken", "takumi", lenInfo, r1.text);
+    LogScanDebug("CheckStoken(getCookieAccountInfoBySToken)", "takumi", lenInfo, r1.text);
 
-    /* ② 换 game token（原版：只带 stoken/mid，不带任何额外请求头） */
     const auto r2 = cpr::Get(cpr::Url{ api::mhy::takumi::game_token },
-                             cpr::Parameters{ { "stoken", stoken.data() }, { "mid", mid.data() } });
-    LogScanDebug("B2 getGameToken (upstream style)", "takumi", lenInfo, r2.text);
-
-    /* ③ 各游戏角色绑定：三种请求形态各试一次，找出能返回 game_uid 的那种 */
-    cpr::Header cookieHeader{ { "User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) miHoYoBBS/2.76.1" },
-                              { "Accept", "application/json" },
-                              { "x-rpc-app_id", "bll8iq97cem8" },
-                              { "x-rpc-app_version", "2.76.1" },
-                              { "x-rpc-client_type", "2" },
-                              { "x-rpc-device_id", device_id },
-                              { "Cookie", cookie } };
-
-    const auto r3 = cpr::Get(cpr::Url{ api::mhy::takumi::get_user_game_roles_by_stoken }, cookieHeader);
-    LogScanDebug("B3 rolesByStoken (Cookie)", "takumi/binding", lenInfo, r3.text);
-
-    const auto r4 = cpr::Get(cpr::Url{ api::mhy::takumi::get_user_game_roles_by_stoken },
                              cpr::Parameters{ { "stoken", stoken.data() }, { "mid", mid.data() } },
                              GetRequestHeader());
-    LogScanDebug("B4 rolesByStoken (query params)", "takumi/binding", lenInfo, r4.text);
+    LogScanDebug("GetGameToken(旧中转)", "takumi", lenInfo, r2.text);
 
-    const auto r5 = cpr::Get(
-        cpr::Url{ "https://api-takumi.mihoyo.com/binding/api/getUserGameRolesByCookie?game_biz=hk4e_cn" },
-        cookieHeader);
-    LogScanDebug("B5 rolesByCookie (Cookie, game_biz=hk4e_cn)", "takumi/binding", lenInfo, r5.text);
+    for (const char* biz : { "hk4e_cn", "hkrpg_cn", "nap_cn", "bh3_cn" })
+    {
+        const std::string ticketUrl{ std::format(
+            "https://passport-api.mihoyo.com/account/ma-cn-verifier/app/createAuthTicketByGameBiz"
+            "?game_biz={}&stoken={}&uid={}&mid={}", biz, stoken, uid, mid) };
+        const auto r3 = cpr::Post(
+            cpr::Url{ ticketUrl },
+            cpr::Header{ { "x-rpc-client_type", "3" }, { "x-rpc-app_id", "ddxf5dufpuyo" }, { "x-rpc-device_id", device_id } });
+        LogScanDebug(biz, "passport/createAuthTicketByGameBiz", lenInfo, r3.text);
+    }
 }
 
 /* ★ 用账号的 stoken/uid/mid 换当前游戏的 game auth ticket。
@@ -621,43 +604,48 @@ inline cpr::Header GetScanConfirmHeader(const std::string_view stoken, const std
     };
 }
 
-/* 原版 1.16.0 的扫码两步（api-sdk 的 combo/panda，实测存活）：
-   scan 负责标记"已扫码"，confirm 用【游戏内 uid + 游戏 token】真正完成登录。
-   注意 passport 的 app/scanQRLogin、app/confirmQRLogin 只有网页端场景可用，
-   游戏客户端不认，已废弃。 */
-inline bool ScanQRLogin(const std::string_view url, const std::string_view ticket, GameType gameType)
+inline bool ScanQRLogin(const std::string_view passportQrUrl, const std::string_view stoken,
+                        const std::string_view mid)
 {
+    const auto [ticket, tokenTypes] = ParseQrTicket(passportQrUrl);
+    if (ticket.empty())
+    {
+        return false;
+    }
+
     const std::string body{ nlohmann::json{
-        { "app_id", static_cast<int>(gameType) },
-        { "device", device_id },
-        { "ticket", ticket } }
+        { "ticket", ticket },
+        { "token_types", tokenTypes } }
                                 .dump() };
     const auto response = cpr::Post(
-        cpr::Url{ url },
+        cpr::Url{ api::mhy::passport::app_scan_qr_login },
         cpr::Body{ body },
-        cpr::Header{ { "Content-Type", "application/json" } });
+        GetScanConfirmHeader(stoken, mid));
 
-    LogScanDebug("pandaScan", std::string(url), body, response.text);
+    LogScanDebug("scanQRLogin", "passport/app/scanQRLogin", body, response.text);
     const auto j = nlohmann::json::parse(response.text, nullptr, false);
     return !j.is_discarded() && j.value("retcode", -1) == 0;
 }
 
-inline bool ConfirmQRLogin(const std::string_view url, const std::string_view uid,
-                           const std::string_view gameToken, const std::string_view ticket,
-                           GameType gameType)
+inline bool ConfirmQRLogin(const std::string_view passportQrUrl, const std::string_view stoken,
+                           const std::string_view mid)
 {
-    const std::string body{ nlohmann::json{
-        { "app_id", static_cast<int>(gameType) },
-        { "device", device_id },
-        { "ticket", ticket },
-        { "payload", { { "proto", "Account" }, { "raw", nlohmann::json{ { "uid", uid }, { "token", gameToken } }.dump() } } } }
-                            .dump() };
-    const auto response = cpr::Post(
-        cpr::Url{ url },
-        cpr::Body{ body },
-        cpr::Header{ { "Content-Type", "application/json" } });
+    const auto [ticket, tokenTypes] = ParseQrTicket(passportQrUrl);
+    if (ticket.empty())
+    {
+        return false;
+    }
 
-    LogScanDebug("pandaConfirm", std::string(url), body, response.text);
+    const std::string body{ nlohmann::json{
+        { "ticket", ticket },
+        { "token_types", tokenTypes } }
+                                .dump() };
+    const auto response = cpr::Post(
+        cpr::Url{ api::mhy::passport::app_confirm_qr_login },
+        cpr::Body{ body },
+        GetScanConfirmHeader(stoken, mid));
+
+    LogScanDebug("confirmQRLogin", "passport/app/confirmQRLogin", body, response.text);
     const auto j = nlohmann::json::parse(response.text, nullptr, false);
     return !j.is_discarded() && j.value("retcode", -1) == 0;
 }

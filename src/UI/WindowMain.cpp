@@ -212,17 +212,18 @@ void WindowMain::pBtstartScreen(bool clicked)
             std::string stoken = userinfo["account"][countA]["access_key"];
             std::string uid = userinfo["account"][countA]["uid"];
             std::string mid = userinfo["account"][countA]["mid"];
-            /* 恢复原版 1.16.0：用 getGameToken 换取当前游戏的 game token，
-               再配合账号里存的【游戏内 uid】去 confirm（两者必须是一对）。 */
-            DiagnoseStoken(stoken, mid, uid);   /* 诊断：game token / 各游戏角色绑定 */
-            auto [code, game_token] = GetGameTokenByStoken(stoken, mid);
-            if (code != 0)
+            /* 新版用 getCookieAccountInfoBySToken 校验账号；
+               旧版这里调的是已失效的 getGameToken 换 token，
+               会在"一点击监视屏幕"时直接弹「登录状态失效」。 */
+            if (!CheckStokenValid(stoken, mid))
             {
                 emit AccountError();
                 return;
             }
+            DiagnoseStoken(stoken, mid, uid);   /* 诊断：探测换取 game token 的两条路径 */
+            t1.mid = mid;
             t1.setServerType(ServerType::Official);
-            t1.setLoginInfo(uid, game_token);
+            t1.setLoginInfo(uid, stoken);
         }
         else if (type == "崩坏3B服")
         {
@@ -278,16 +279,16 @@ void WindowMain::pBtStream(bool clicked)
             std::string stoken = userinfo["account"][countA]["access_key"];
             std::string uid = userinfo["account"][countA]["uid"];
             std::string mid = userinfo["account"][countA]["mid"];
-            /* 同上：恢复 getGameToken 换 game token */
-            DiagnoseStoken(stoken, mid, uid);   /* 诊断：game token / 各游戏角色绑定 */
-            auto [code, game_token] = GetGameTokenByStoken(stoken, mid);
-            if (code != 0)
+            /* 同上：改用新接口校验账号，避免一点击就弹「登录状态失效」 */
+            if (!CheckStokenValid(stoken, mid))
             {
                 emit AccountError();
                 return;
             }
+            DiagnoseStoken(stoken, mid, uid);   /* 诊断：探测换取 game token 的两条路径 */
+            t2.mid = mid;
             t2.setServerType(ServerType::Official);
-            t2.setLoginInfo(uid, game_token);
+            t2.setLoginInfo(uid, stoken);
         }
         else if (type == "崩坏3B服")
         {

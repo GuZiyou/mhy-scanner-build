@@ -524,13 +524,21 @@ void WindowLogin::StartQRCodeLogin()
         QRCodelabel->setText("二维码加载中");
         AllowDrawQRCode.store(false);
 
-        /* 恢复原版 1.16.0 的「游戏二维码」链路：combo/panda/qrcode/fetch 创建二维码，
-           用手机米游社 App 扫码确认，query 的 payload.raw 里拿到的才是
-           【游戏内 uid + 游戏 token】——这正是游戏端 confirm 需要的凭据。
-           passport /app/ 流程给的是米游社 aid，拿它去 confirm 会被游戏判为登录失效。 */
-        const std::string qrcodeString{ GetLoginQrcodeUrl() };
-        ticket = std::string{ qrcodeString.data() + qrcodeString.size() - 24, 24 };
-        QrcodeMat = createQrCodeToCvMat(qrcodeString);
+        /* passport /app/ 扫码登录（= 能用那版 1.16.0 的做法）：
+           二维码内容与 ticket 都由服务端给出，手机米游社 App 扫码确认后
+           queryQRLoginStatus 直接返回 tokens/stoken 与 user_info(aid/mid/name)。
+           注意：不能用 0 号目录（旧版 v1.1.15）的 GetLoginQrcodeUrl()——
+           那正是"加不上账号"的那个旧实现。 */
+        const auto [code, url, qrTicket] = CreateQRLogin();
+        if (code != 0 || url.empty() || qrTicket.empty())
+        {
+            QRCodelabel->setText("二维码加载失败");
+            emit showMessagebox("创建登录二维码失败！\n请检查网络后重试。");
+            emit QrcodeLoginResult(false);
+            return;
+        }
+        ticket = qrTicket;
+        QrcodeMat = createQrCodeToCvMat(url);
         QRCodeQImage = CV_8UC1_MatToQImage(QrcodeMat);
         if (AllowDrawQRCode.load())
         {
@@ -543,7 +551,7 @@ void WindowLogin::StartQRCodeLogin()
 
 void WindowLogin::CheckQRCodeLoginState()
 {
-    auto [state, uid, game_token] = GetQRCodeState(ticket);
+    auto [state, token, aid, mid, name] = QueryQRLoginStatus(ticket);
     switch (state)
     {
     case LoginQRCodeState::Init:
@@ -557,25 +565,22 @@ void WindowLogin::CheckQRCodeLoginState()
     break;
     case LoginQRCodeState::Confirmed:
     {
-        /* uid / game_token 来自游戏二维码，再用 getTokenByGameToken 换成 stoken + mid。
-           存下来的 uid 必须是【游戏内 uid】，不能存米游社 aid。 */
-        LogScanDebug("AddAccount/getGameQR", "combo/panda/qrcode/query",
-                     std::format("uid_len={} game_token_len={}", uid.size(), game_token.size()),
-                     std::format("uid={} game_token_len={}", uid, game_token.size()));
-        auto [code, mid, stoken] = GetStokenByGameToken(uid, game_token);
-        if (code == 0)
+        /* 新接口在确认后直接给出 tokens[0].token（stoken v2）与
+           user_info 里的 aid / mid / account_name，
+           不再需要旧的 GetStokenByGameToken() 换 token 那一步。 */
+        if (token.empty())
         {
-            std::string name{ getMysUserName(uid) };
-            emit AddUserInfo(name, stoken, uid, mid, "官服");
-            QRCodelabel->setText("登录成功！");
-            emit QrcodeLoginResult(true);
-        }
-        else
-        {
-            LogScanDebug("AddAccount/getTokenByGameToken FAILED", "ma-cn-session/app/getTokenByGameToken",
-                         std::format("retcode={}", code), "");
             emit showMessagebox("获取STOKEN失败！");
+            emit QrcodeLoginResult(false);
+            return;
         }
+        if (name.empty())
+        {
+            name = getMysUserName(aid);
+        }
+        emit AddUserInfo(name, token, aid, mid, "官服");
+        QRCodelabel->setText("登录成功！");
+        emit QrcodeLoginResult(true);
         return;
     }
     break;
