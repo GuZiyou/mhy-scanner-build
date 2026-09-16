@@ -553,12 +553,34 @@ inline bool ConfirmQRLogin(const std::string_view passportQrUrl, const std::stri
 
     LogScanDebug("confirmQRLogin", "passport/app/confirmQRLogin", body, response.text);
     const auto j = nlohmann::json::parse(response.text, nullptr, false);
-    if (j.is_discarded() || j.value("retcode", -1) != 0)
-    {
-        DiagnoseConfirmQRLogin(passportQrUrl, stoken, mid);   /* 诊断：把参数矩阵写进日志 */
-        return false;
-    }
-    return true;
+    return !j.is_discarded() && j.value("retcode", -1) == 0;
+}
+
+/* ★ 真正的最后一步：各游戏 combo/panda/qrcode/confirm（实测可用）。
+   请求体保留旧格式 payload{proto:"Account", raw:"{uid, token}"}，
+   其中 token 现在直接放账号的 stoken（access_key）—— 因为
+   api-takumi 的 getGameToken 中转已失效，1 号也已删除该步骤。
+   （实测：只发 ticket 或带 passport_app_id/ts/passport_qr_url 都返回
+     -102 系统错误；只有带 payload 才返回 retcode 0。） */
+inline bool PandaConfirmQRLogin(const std::string_view url, const std::string_view uid,
+                                const std::string_view token, const std::string_view ticket,
+                                GameType gameType)
+{
+    const std::string body{ nlohmann::json{
+        { "app_id", static_cast<int>(gameType) },
+        { "device", device_id },
+        { "ticket", ticket },
+        { "payload", { { "proto", "Account" }, { "raw", nlohmann::json{ { "uid", uid }, { "token", token } }.dump() } } } }
+                            .dump() };
+
+    const auto response = cpr::Post(
+        cpr::Url{ url },
+        cpr::Body{ body },
+        cpr::Header{ { "Content-Type", "application/json" } });
+
+    LogScanDebug("pandaConfirm", std::string(url), body, response.text);
+    const auto j = nlohmann::json::parse(response.text, nullptr, false);
+    return !j.is_discarded() && j.value("retcode", -1) == 0;
 }
 
 /* 扫码流程的第一步：仍然要调游戏侧的 combo/panda scan，但必须带上

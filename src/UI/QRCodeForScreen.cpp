@@ -99,7 +99,6 @@ void QRCodeForScreen::LoginOfficial()
                 const std::string passportQrUrl = PandaScanQRCode(scanUrl.data(), ticket, gameType);
                 if (!passportQrUrl.empty())
                 {
-                    (void)ScanQRLogin(passportQrUrl, gameToken, mid);
                     lastTicket = ticket;
                     lastPassportQrUrl = passportQrUrl;
                     nlohmann::json config = nlohmann::json::parse(m_config->getConfig());
@@ -206,7 +205,7 @@ void QRCodeForScreen::continueLastLogin()
         using enum ServerType;
     case Official:
     {
-        bool b = ConfirmQRLogin(lastPassportQrUrl, gameToken, mid);
+        bool b = PandaConfirmQRLogin(confirmUrl, uid, gameToken, lastTicket, gameType);
         if (b)
         {
             Q_EMIT loginResults(ScanRet::SUCCESS);
