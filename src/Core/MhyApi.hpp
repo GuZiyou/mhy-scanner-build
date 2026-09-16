@@ -68,6 +68,23 @@ inline cpr::Header GetRequestHeader()
     return headers;
 }
 
+/* 诊断用：把扫码链路上每个请求的 URL / 请求体 / 原始响应追加写到
+   ./Config/api_debug.log，便于在真机上定位问题（不影响正常流程）。
+   必须放在文件前部：后面多处（含 QueryQRLoginStatus）都会用到它。 */
+inline void LogScanDebug(const std::string_view tag, const std::string_view url,
+                         const std::string_view body, const std::string_view resp)
+{
+    std::ofstream file{ "./Config/api_debug.log", std::ios::app };
+    if (!file)
+    {
+        return;
+    }
+    file << "----- " << tag << " -----\n"
+         << "url : " << url << "\n"
+         << "body: " << body << "\n"
+         << "resp: " << resp << "\n";
+}
+
 /* ---------------------------------------------------------------------- *
  * 新的扫码登录（passport-api …/ma-cn-passport/app/ 系列）
  *
@@ -415,18 +432,8 @@ inline bool CheckStokenValid(const std::string_view stoken, const std::string_vi
 
 /* 诊断用：把扫码链路上每个请求的 URL / 请求体 / 原始响应追加写到
    ./Config/api_debug.log，便于在真机上定位问题（不影响正常流程）。 */
-inline void LogScanDebug(const std::string_view tag, const std::string_view url,
-                         const std::string_view body, const std::string_view resp)
+inline void LogScanDebugOldRemoved()
 {
-    std::ofstream file{ "./Config/api_debug.log", std::ios::app };
-    if (!file)
-    {
-        return;
-    }
-    file << "----- " << tag << " -----\n"
-         << "url : " << url << "\n"
-         << "body: " << body << "\n"
-         << "resp: " << resp << "\n";
 }
 
 /* 诊断：确认失败时，把常见的凭证/请求头组合各试一遍并写日志。
