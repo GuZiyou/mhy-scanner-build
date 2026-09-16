@@ -205,7 +205,10 @@ void QRCodeForScreen::continueLastLogin()
         using enum ServerType;
     case Official:
     {
-        bool b = PandaConfirmQRLogin(confirmUrl, uid, gameToken, lastTicket, gameType);
+        /* 先换当前游戏的 game auth ticket（token 必须是它，不能直接用 stoken） */
+        const std::string authTicket{ CreateAuthTicketByGameBiz(GameBizOf(gameType), gameToken, uid, mid) };
+        bool b = PandaConfirmQRLogin(confirmUrl, uid, authTicket.empty() ? gameToken : authTicket,
+                                     lastTicket, gameType);
         if (b)
         {
             Q_EMIT loginResults(ScanRet::SUCCESS);

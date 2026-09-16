@@ -545,6 +545,54 @@ inline void DiagnoseStoken(const std::string_view stoken, const std::string_view
     }
 }
 
+/* ★ 用账号的 stoken/uid/mid 换当前游戏的 game auth ticket。
+   这就是 1 号用来替代已失效 getGameToken 的那一步（实测四个游戏均 retcode 0）。 */
+inline std::string_view GameBizOf(GameType type)
+{
+    switch (type)
+    {
+    case GameType::Genshin:
+        return "hk4e_cn";
+    case GameType::HonkaiStarRail:
+        return "hkrpg_cn";
+    case GameType::ZenlessZoneZero:
+        return "nap_cn";
+    case GameType::Honkai3:
+        return "bh3_cn";
+    default:
+        return {};
+    }
+}
+
+inline std::string CreateAuthTicketByGameBiz(const std::string_view gameBiz,
+                                             const std::string_view stoken,
+                                             const std::string_view uid,
+                                             const std::string_view mid)
+{
+    if (gameBiz.empty())
+    {
+        return {};
+    }
+    const std::string url{ std::format(
+        "https://passport-api.mihoyo.com/account/ma-cn-verifier/app/createAuthTicketByGameBiz"
+        "?game_biz={}&stoken={}&uid={}&mid={}", gameBiz, stoken, uid, mid) };
+
+    const auto response = cpr::Post(
+        cpr::Url{ url },
+        cpr::Header{ { "x-rpc-client_type", "3" }, { "x-rpc-app_id", "ddxf5dufpuyo" }, { "x-rpc-device_id", device_id } });
+
+    LogScanDebug("createAuthTicket", "passport/createAuthTicketByGameBiz",
+                 std::format("game_biz={} stoken_len={} uid_len={} mid_len={}", gameBiz, stoken.size(), uid.size(), mid.size()),
+                 response.text);
+
+    const auto j = nlohmann::json::parse(response.text, nullptr, false);
+    if (j.is_discarded() || j.value("retcode", -1) != 0 || !j.contains("data") || !j["data"].is_object())
+    {
+        return {};
+    }
+    return j["data"].value("ticket", std::string{});
+}
+
 /* 新接口共用：Cookie 里带账号的 stoken/mid，头里带 web 的 app id */
 inline cpr::Header GetScanConfirmHeader(const std::string_view stoken, const std::string_view mid)
 {
