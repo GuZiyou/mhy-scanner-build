@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <string>
 #include <string_view>
@@ -65,6 +65,92 @@ inline cpr::Header GetRequestHeader()
         { "x-rpc-sdk_version", "2.16.0" }
     };
     return headers;
+}
+
+/* ---------------------------------------------------------------------- *
+ * 新的扫码登录（passport-api …/ma-cn-passport/app/ 系列）
+ *
+ * 旧的 hk4e-sdk / api-sdk combo-panda 那套已经失效（见 ApiDefs.hpp 里的说明）。
+ * 这一套只需要三个请求头，不需要 DS 签名、不需要 Cookie。
+ * ---------------------------------------------------------------------- */
+
+inline cpr::Header GetPassportAppHeader()
+{
+    return cpr::Header{
+        { "Content-Type", "application/json" },
+        { "x-rpc-app_id", std::string(passport_app_id) },
+        { "x-rpc-device_id", device_id }
+    };
+}
+
+/* 创建登录二维码，返回 { retcode, url, ticket }。
+   url 是二维码内容（user.mihoyo.com 登录页），ticket 用来轮询状态。 */
+inline std::tuple<int, std::string, std::string> CreateQRLogin()
+{
+    const auto response = cpr::Post(
+        cpr::Url{ api::mhy::passport::app_create_qr_login },
+        cpr::Body{ "{}" },
+        GetPassportAppHeader());
+
+    const auto j = nlohmann::json::parse(response.text, nullptr, false);
+    if (j.is_discarded() || j.value("retcode", -1) != 0)
+    {
+        return { j.is_discarded() ? -1 : j.value("retcode", -1), {}, {} };
+    }
+
+    return { 0,
+             j["data"]["url"].get<std::string>(),
+             j["data"]["ticket"].get<std::string>() };
+}
+
+/* 查询二维码状态，返回 { state, token, aid, mid, name }。
+   Confirmed 时 tokens[0].token 就是登录凭证（token_type=1，stoken v2），
+   user_info 里给出 mid / aid / account_name，正好是账号记录需要的字段。 */
+inline std::tuple<LoginQRCodeState, std::string, std::string, std::string, std::string>
+QueryQRLoginStatus(const std::string_view ticket)
+{
+    const auto response = cpr::Post(
+        cpr::Url{ api::mhy::passport::app_query_qr_login_status },
+        cpr::Body{ nlohmann::json{ { "ticket", ticket } }.dump() },
+        GetPassportAppHeader());
+
+    const auto j = nlohmann::json::parse(response.text, nullptr, false);
+    if (j.is_discarded() || j.value("retcode", -1) != 0)
+    {
+        return { LoginQRCodeState::Expired, {}, {}, {}, {} };
+    }
+
+    const auto& data = j["data"];
+    const std::string status{ data.value("status", "") };
+    if (status == "Created")
+    {
+        return { LoginQRCodeState::Init, {}, {}, {}, {} };
+    }
+    if (status == "Scanned")
+    {
+        return { LoginQRCodeState::Scanned, {}, {}, {}, {} };
+    }
+    if (status != "Confirmed")
+    {
+        return { LoginQRCodeState::Expired, {}, {}, {}, {} };
+    }
+
+    std::string token{};
+    if (data.contains("tokens") && data["tokens"].is_array() && !data["tokens"].empty())
+    {
+        token = data["tokens"][0].value("token", "");
+    }
+
+    std::string mid{}, aid{}, name{};
+    if (data.contains("user_info") && data["user_info"].is_object())
+    {
+        const auto& info = data["user_info"];
+        mid = info.value("mid", "");
+        aid = info.value("aid", "");
+        name = info.value("account_name", "");
+    }
+
+    return { LoginQRCodeState::Confirmed, token, aid, mid, name };
 }
 
 inline std::string GetLoginQrcodeUrl(const GameType type = loginType)

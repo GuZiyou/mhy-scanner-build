@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <string_view>
 
@@ -63,6 +63,13 @@ constinit const std::string_view mihoyobbs_salt_web{ "zZDfHqEcwTqvvKDmqRcHyqqurx
 constinit const std::string_view mihoyobbs_salt_x4{ "xV8v4Qu54lUKrEYFZkJhB8cuOh9Asafs" };
 constinit const std::string_view mihoyobbs_salt_x6{ "t0qEgfub6cvueAPgR5m9aQWWVciEer7v" };
 
+/*
+ * passport-api …/ma-cn-passport/app/* 这套新接口专用的 app id。
+ * 取自 1 号（1.16.0）二进制的反编译结果；注意它既不是 web 的 bll8iq97cem8，
+ * 也不是社区实现里常被当成"GameCombo"的 ddxf5dufpuyo。
+ */
+constinit const std::string_view passport_app_id{ "dw9y09jqjpxc" };
+
 namespace api::mhy
 {
 
@@ -116,6 +123,25 @@ namespace passport
 constexpr compile_string base{ "https://passport-api.mihoyo.com" };
 constexpr auto create_captcha = base + compile_string{ "/account/ma-cn-verifier/verifier/createLoginCaptcha" };
 constexpr auto login_by_mobile_captcha = base + compile_string{ "/account/ma-cn-passport/app/loginByMobileCaptcha" };
+
+/*
+ * 新的统一扫码登录接口（1.16.0 起在用）。
+ *
+ * 旧的一套 combo/panda 接口（hk4e-sdk 的 qrcode/fetch、query 与各游戏
+ * api-sdk 的 qrcode/scan、confirm）已经失效：fetch 实测返回
+ * {"retcode":-502,"message":"Something went wrong..."}，这也是"无法添加账号 /
+ * 扫码后提示登录状态失效"的根因。
+ *
+ * 这套 /app/ 接口要求三个请求头：
+ *     Content-Type:     application/json
+ *     x-rpc-app_id:     <passport_app_id>   （见下方常量，注意不是 web 用的 bll8iq97cem8）
+ *     x-rpc-device_id:  <设备 id>
+ * 不需要 DS 签名，也不需要 Cookie。
+ */
+constexpr auto app_create_qr_login = base + compile_string{ "/account/ma-cn-passport/app/createQRLogin" };
+constexpr auto app_query_qr_login_status = base + compile_string{ "/account/ma-cn-passport/app/queryQRLoginStatus" };
+constexpr auto app_scan_qr_login = base + compile_string{ "/account/ma-cn-passport/app/scanQRLogin" };
+constexpr auto app_confirm_qr_login = base + compile_string{ "/account/ma-cn-passport/app/confirmQRLogin" };
 }
 
 namespace mys

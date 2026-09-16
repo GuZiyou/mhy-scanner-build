@@ -1,4 +1,4 @@
-﻿#include "WindowLogin.h"
+#include "WindowLogin.h"
 
 #include <thread>
 #include <ranges>
@@ -523,9 +523,20 @@ void WindowLogin::StartQRCodeLogin()
         QRCodeQImage.fill(255);
         QRCodelabel->setText("二维码加载中");
         AllowDrawQRCode.store(false);
-        const std::string qrcodeString{ GetLoginQrcodeUrl() };
-        ticket = std::string{ qrcodeString.data() + qrcodeString.size() - 24, 24 };
-        QrcodeMat = createQrCodeToCvMat(qrcodeString);
+
+        /* 新的 passport /app/ 扫码登录：二维码内容与 ticket 由服务端直接给出。
+           旧的 GetLoginQrcodeUrl() 走的是已失效的 combo/panda 接口，
+           而且是从链接末尾截 24 字节当 ticket，这里不再需要。 */
+        const auto [code, url, qrTicket] = CreateQRLogin();
+        if (code != 0 || url.empty() || qrTicket.empty())
+        {
+            QRCodelabel->setText("二维码加载失败");
+            emit showMessagebox("创建登录二维码失败！\n请检查网络后重试。");
+            emit QrcodeLoginResult(false);
+            return;
+        }
+        ticket = qrTicket;
+        QrcodeMat = createQrCodeToCvMat(url);
         QRCodeQImage = CV_8UC1_MatToQImage(QrcodeMat);
         if (AllowDrawQRCode.load())
         {
@@ -538,7 +549,7 @@ void WindowLogin::StartQRCodeLogin()
 
 void WindowLogin::CheckQRCodeLoginState()
 {
-    auto [state, uid, game_token] = GetQRCodeState(ticket);
+    auto [state, token, aid, mid, name] = QueryQRLoginStatus(ticket);
     switch (state)
     {
     case LoginQRCodeState::Init:
@@ -552,18 +563,22 @@ void WindowLogin::CheckQRCodeLoginState()
     break;
     case LoginQRCodeState::Confirmed:
     {
-        auto [code, mid, stoken] = GetStokenByGameToken(uid, game_token);
-        if (code == 0)
-        {
-            std::string name{ getMysUserName(uid) };
-            emit AddUserInfo(name, stoken, uid, mid, "官服");
-            QRCodelabel->setText("登录成功！");
-            emit QrcodeLoginResult(true);
-        }
-        else
+        /* 新接口在确认后直接给出 tokens[0].token（stoken v2）与
+           user_info 里的 aid / mid / account_name，
+           不再需要旧的 GetStokenByGameToken() 换 token 那一步。 */
+        if (token.empty())
         {
             emit showMessagebox("获取STOKEN失败！");
+            emit QrcodeLoginResult(false);
+            return;
         }
+        if (name.empty())
+        {
+            name = getMysUserName(aid);
+        }
+        emit AddUserInfo(name, token, aid, mid, "官服");
+        QRCodelabel->setText("登录成功！");
+        emit QrcodeLoginResult(true);
         return;
     }
     break;
