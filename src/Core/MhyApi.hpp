@@ -448,28 +448,34 @@ inline void DiagnoseConfirmQRLogin(const std::string_view passportQrUrl,
     const std::string st{ stoken };
     const std::string md{ mid };
 
+    /* 直接用字面量，避免 compile_string 常量到 const char* 的转换问题 */
+    constexpr const char* scanEp = "https://passport-api.mihoyo.com/account/ma-cn-passport/app/scanQRLogin";
+    constexpr const char* confirmEp = "https://passport-api.mihoyo.com/account/ma-cn-passport/app/confirmQRLogin";
+    constexpr const char* appWeb = "bll8iq97cem8";
+    constexpr const char* appDw = "dw9y09jqjpxc";
+
     const std::vector<Variant> variants{
-        { "d1 scan   bll8 cookie(;mid)      ", api::mhy::passport::app_scan_qr_login, "bll8iq97cem8",
+        { "d1 scan   bll8 cookie(;mid)      ", scanEp, appWeb,
           std::format("stoken={};mid={}", st, md), bodyStr, nullptr },
-        { "d2 confirm bll8 cookie(;mid)      ", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+        { "d2 confirm bll8 cookie(;mid)      ", confirmEp, appWeb,
           std::format("stoken={};mid={}", st, md), bodyStr, nullptr },
-        { "d3 confirm bll8 cookie(; mid 空格)", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+        { "d3 confirm bll8 cookie(; mid 空格)", confirmEp, appWeb,
           std::format("stoken={}; mid={}", st, md), bodyStr, nullptr },
-        { "d4 confirm bll8 stoken_v2 字段     ", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+        { "d4 confirm bll8 stoken_v2 字段     ", confirmEp, appWeb,
           std::format("stoken_v2={};mid={}", st, md), bodyStr, nullptr },
-        { "d5 confirm bll8 account_id+stoken  ", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+        { "d5 confirm bll8 account_id+stoken  ", confirmEp, appWeb,
           std::format("account_id={};stoken={};mid={}", md, st, md), bodyStr, nullptr },
-        { "d6 confirm bll8 ltoken/ltuid        ", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+        { "d6 confirm bll8 ltoken/ltuid        ", confirmEp, appWeb,
           std::format("ltoken={};ltuid={}", st, md), bodyStr, nullptr },
-        { "d7 confirm dw9y cookie(;mid)        ", api::mhy::passport::app_confirm_qr_login, "dw9y09jqjpxc",
+        { "d7 confirm dw9y cookie(;mid)        ", confirmEp, appDw,
           std::format("stoken={};mid={}", st, md), bodyStr, nullptr },
-        { "d8 confirm bll8 client_type=3       ", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+        { "d8 confirm bll8 client_type=3       ", confirmEp, appWeb,
           std::format("stoken={};mid={}", st, md), bodyStr, "3" },
-        { "d9 confirm bll8 token_types 数字    ", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+        { "d9 confirm bll8 token_types 数字    ", confirmEp, appWeb,
           std::format("stoken={};mid={}", st, md), bodyNum, nullptr },
-        { "d10 confirm bll8 只发 ticket        ", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+        { "d10 confirm bll8 只发 ticket        ", confirmEp, appWeb,
           std::format("stoken={};mid={}", st, md), bodyOnly, nullptr },
-        { "d11 confirm bll8 无 Cookie          ", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+        { "d11 confirm bll8 无 Cookie          ", confirmEp, appWeb,
           std::string{}, bodyStr, nullptr },
     };
 
