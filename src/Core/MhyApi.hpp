@@ -7,6 +7,7 @@
 #include <sstream>
 #include <optional>
 #include <iostream>
+#include <fstream>
 
 #include <nlohmann/json.hpp>
 #include <cpr/cpr.h>
@@ -402,6 +403,22 @@ inline bool CheckStokenValid(const std::string_view stoken, const std::string_vi
     return !j.is_discarded() && j.value("retcode", -1) == 0;
 }
 
+/* 诊断用：把扫码链路上每个请求的 URL / 请求体 / 原始响应追加写到
+   ./Config/api_debug.log，便于在真机上定位问题（不影响正常流程）。 */
+inline void LogScanDebug(const std::string_view tag, const std::string_view url,
+                         const std::string_view body, const std::string_view resp)
+{
+    std::ofstream file{ "./Config/api_debug.log", std::ios::app };
+    if (!file)
+    {
+        return;
+    }
+    file << "----- " << tag << " -----\n"
+         << "url : " << url << "\n"
+         << "body: " << body << "\n"
+         << "resp: " << resp << "\n";
+}
+
 /* 新接口共用：Cookie 里带账号的 stoken/mid，头里带 web 的 app id */
 inline cpr::Header GetScanConfirmHeader(const std::string_view stoken, const std::string_view mid)
 {
@@ -422,14 +439,16 @@ inline bool ScanQRLogin(const std::string_view passportQrUrl, const std::string_
         return false;
     }
 
+    const std::string body{ nlohmann::json{
+        { "ticket", ticket },
+        { "token_types", tokenTypes } }
+                                .dump() };
     const auto response = cpr::Post(
         cpr::Url{ api::mhy::passport::app_scan_qr_login },
-        cpr::Body{ nlohmann::json{
-            { "ticket", ticket },
-            { "token_types", tokenTypes } }
-                       .dump() },
+        cpr::Body{ body },
         GetScanConfirmHeader(stoken, mid));
 
+    LogScanDebug("scanQRLogin", "passport/app/scanQRLogin", body, response.text);
     const auto j = nlohmann::json::parse(response.text, nullptr, false);
     return !j.is_discarded() && j.value("retcode", -1) == 0;
 }
@@ -443,14 +462,16 @@ inline bool ConfirmQRLogin(const std::string_view passportQrUrl, const std::stri
         return false;
     }
 
+    const std::string body{ nlohmann::json{
+        { "ticket", ticket },
+        { "token_types", tokenTypes } }
+                                .dump() };
     const auto response = cpr::Post(
         cpr::Url{ api::mhy::passport::app_confirm_qr_login },
-        cpr::Body{ nlohmann::json{
-            { "ticket", ticket },
-            { "token_types", tokenTypes } }
-                       .dump() },
+        cpr::Body{ body },
         GetScanConfirmHeader(stoken, mid));
 
+    LogScanDebug("confirmQRLogin", "passport/app/confirmQRLogin", body, response.text);
     const auto j = nlohmann::json::parse(response.text, nullptr, false);
     return !j.is_discarded() && j.value("retcode", -1) == 0;
 }
@@ -463,20 +484,22 @@ inline bool ConfirmQRLogin(const std::string_view passportQrUrl, const std::stri
 inline std::string PandaScanQRCode(const std::string_view url, const std::string_view ticket,
                                    GameType gameType)
 {
+    const std::string body{ nlohmann::json{
+        { "app_id", static_cast<int>(gameType) },
+        { "device", device_id },
+        { "ticket", ticket },
+        { "passport_app_id", "bll8iq97cem8" },
+        { "ts", GetUnixTimeStampSeconds() } }
+                                .dump() };
     const auto response = cpr::Post(
         cpr::Url{ url },
-        cpr::Body{ nlohmann::json{
-            { "app_id", static_cast<int>(gameType) },
-            { "device", device_id },
-            { "ticket", ticket },
-            { "passport_app_id", "bll8iq97cem8" },
-            { "ts", GetUnixTimeStampSeconds() } }
-                       .dump() },
+        cpr::Body{ body },
         cpr::Header{
             { "Content-Type", "application/json" },
             { "x-rpc-app_id", "bll8iq97cem8" },
             { "x-rpc-device_id", device_id } });
 
+    LogScanDebug("pandaScan", std::string(url), body, response.text);
     const auto j = nlohmann::json::parse(response.text, nullptr, false);
     if (j.is_discarded() || j.value("retcode", -1) != 0)
     {
