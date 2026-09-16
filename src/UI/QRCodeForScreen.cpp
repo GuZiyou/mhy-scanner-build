@@ -93,10 +93,13 @@ void QRCodeForScreen::LoginOfficial()
                     mtx.unlock();
                     return;
                 }
-                if (ScanQRLogin(ticket, tokenTypes, gameToken, mid))
+                /* ① 游戏侧 scan（带 passport_app_id / ts）→ passport_qr_url
+                   ② passport scanQRLogin（Cookie: stoken/mid） */
+                const std::string passportQrUrl = PandaScanQRCode(scanUrl.data(), ticket, gameType);
+                if (!passportQrUrl.empty() && ScanQRLogin(passportQrUrl, gameToken, mid))
                 {
                     lastTicket = ticket;
-                    lastTokenTypes = tokenTypes;
+                    lastPassportQrUrl = passportQrUrl;
                     nlohmann::json config = nlohmann::json::parse(m_config->getConfig());
                     if (config["auto_login"])
                     {
@@ -201,7 +204,7 @@ void QRCodeForScreen::continueLastLogin()
         using enum ServerType;
     case Official:
     {
-        bool b = ConfirmQRLogin(lastTicket, lastTokenTypes, gameToken, mid);
+        bool b = ConfirmQRLogin(lastPassportQrUrl, gameToken, mid);
         if (b)
         {
             Q_EMIT loginResults(ScanRet::SUCCESS);

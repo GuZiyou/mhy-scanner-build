@@ -413,9 +413,15 @@ inline cpr::Header GetScanConfirmHeader(const std::string_view stoken, const std
     };
 }
 
-inline bool ScanQRLogin(const std::string_view ticket, const std::string_view tokenTypes,
-                        const std::string_view stoken, const std::string_view mid)
+inline bool ScanQRLogin(const std::string_view passportQrUrl, const std::string_view stoken,
+                        const std::string_view mid)
 {
+    const auto [ticket, tokenTypes] = ParseQrTicket(passportQrUrl);
+    if (ticket.empty())
+    {
+        return false;
+    }
+
     const auto response = cpr::Post(
         cpr::Url{ api::mhy::passport::app_scan_qr_login },
         cpr::Body{ nlohmann::json{
@@ -428,9 +434,15 @@ inline bool ScanQRLogin(const std::string_view ticket, const std::string_view to
     return !j.is_discarded() && j.value("retcode", -1) == 0;
 }
 
-inline bool ConfirmQRLogin(const std::string_view ticket, const std::string_view tokenTypes,
-                           const std::string_view stoken, const std::string_view mid)
+inline bool ConfirmQRLogin(const std::string_view passportQrUrl, const std::string_view stoken,
+                           const std::string_view mid)
 {
+    const auto [ticket, tokenTypes] = ParseQrTicket(passportQrUrl);
+    if (ticket.empty())
+    {
+        return false;
+    }
+
     const auto response = cpr::Post(
         cpr::Url{ api::mhy::passport::app_confirm_qr_login },
         cpr::Body{ nlohmann::json{
@@ -441,6 +453,36 @@ inline bool ConfirmQRLogin(const std::string_view ticket, const std::string_view
 
     const auto j = nlohmann::json::parse(response.text, nullptr, false);
     return !j.is_discarded() && j.value("retcode", -1) == 0;
+}
+
+/* 扫码流程的第一步：仍然要调游戏侧的 combo/panda scan，但必须带上
+   passport_app_id 与 ts —— 响应里的 data.passport_qr_url 才是后续
+   passport scanQRLogin / confirmQRLogin 要用的二维码地址。
+   （1 号的 PandaScanQRCode 就是这么做的；漏掉这一步会导致扫码失败、
+     游戏端也毫无反应。） */
+inline std::string PandaScanQRCode(const std::string_view url, const std::string_view ticket,
+                                   GameType gameType)
+{
+    const auto response = cpr::Post(
+        cpr::Url{ url },
+        cpr::Body{ nlohmann::json{
+            { "app_id", static_cast<int>(gameType) },
+            { "device", device_id },
+            { "ticket", ticket },
+            { "passport_app_id", "bll8iq97cem8" },
+            { "ts", GetUnixTimeStampSeconds() } }
+                       .dump() },
+        cpr::Header{
+            { "Content-Type", "application/json" },
+            { "x-rpc-app_id", "bll8iq97cem8" },
+            { "x-rpc-device_id", device_id } });
+
+    const auto j = nlohmann::json::parse(response.text, nullptr, false);
+    if (j.is_discarded() || j.value("retcode", -1) != 0)
+    {
+        return {};
+    }
+    return j["data"].value("passport_qr_url", std::string{});
 }
 
 inline std::string makeSign(const nlohmann::json& data)

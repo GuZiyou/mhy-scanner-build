@@ -271,11 +271,13 @@ void QRCodeForStream::LoginOfficial()
                         mtx.unlock();
                         return;
                     }
-                    /* 新版：Cookie 用账号的 stoken/mid（旧的 game_token 中转已失效） */
-                    if (ScanQRLogin(ticket, tokenTypes, gameToken, mid))
+                    /* ① 先调游戏侧 scan（带 passport_app_id / ts）拿 passport_qr_url
+                       ② 再用账号的 stoken/mid 作为 Cookie 调 passport scanQRLogin */
+                    const std::string passportQrUrl = PandaScanQRCode(scanUrl.data(), ticket, gameType);
+                    if (!passportQrUrl.empty() && ScanQRLogin(passportQrUrl, gameToken, mid))
                     {
                         lastTicket = ticket;
-                        lastTokenTypes = tokenTypes;
+                        lastPassportQrUrl = passportQrUrl;
                         nlohmann::json config = nlohmann::json::parse(m_config->getConfig());
                         if (config["auto_login"])
                         {
@@ -497,7 +499,7 @@ void QRCodeForStream::continueLastLogin()
         using enum ServerType;
     case Official:
     {
-        bool b = ConfirmQRLogin(lastTicket, lastTokenTypes, gameToken, mid);
+        bool b = ConfirmQRLogin(lastPassportQrUrl, gameToken, mid);
         if (b)
         {
             Q_EMIT loginResults(ScanRet::SUCCESS);
