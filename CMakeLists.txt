@@ -13,8 +13,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(UNIT_TESTS "Unit Tests" OFF)
 option(DEV "DEV" OFF)
-# 扫码自测工具：不依赖 Qt，直接对图片跑一遍新的扫码逻辑
-option(SCAN_TEST "Build standalone QR scan test tool" OFF)
+# 扫码自测工具：不依赖 Qt，直接对图片跑一遍新的扫码逻辑。
+# 默认打开：CI 出的产物里会带上 scan_test.exe，便于发布后自测/对比速度
+# （它只多编一个 QRScanner.cpp，几乎不增加构建时间）。
+option(SCAN_TEST "Build standalone QR scan test tool" ON)
 
 add_definitions(-DMHY_Scanner_VERSION="${PROJECT_VERSION}")
 
@@ -195,6 +197,12 @@ endif()
 set(Install_Directory "${CMAKE_INSTALL_PREFIX}/${PROJECT_NAME}_${PROJECT_VERSION}")
 
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION ${Install_Directory})
+
+# 之前漏了这条：scan_test 只被构建、没被安装，所以 CI 产物里一直没有测速工具。
+# 它的 ZBar DLL 由下面 ZBAR_INSTALL_FILES 那条统一装到同一个目录。
+if(SCAN_TEST)
+	install(TARGETS scan_test RUNTIME DESTINATION ${Install_Directory})
+endif()
 
 install(FILES $<TARGET_PDB_FILE:${PROJECT_NAME}> DESTINATION ${Install_Directory})
 
