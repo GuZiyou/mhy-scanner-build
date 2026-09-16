@@ -528,9 +528,11 @@ inline void DiagnoseStoken(const std::string_view stoken, const std::string_view
 
     for (const char* biz : { "hk4e_cn", "hkrpg_cn", "nap_cn", "bh3_cn" })
     {
+        const std::string ticketUrl{ std::format(
+            "https://passport-api.mihoyo.com/account/ma-cn-verifier/app/createAuthTicketByGameBiz"
+            "?game_biz={}&stoken={}&uid={}&mid={}", biz, stoken, uid, mid) };
         const auto r3 = cpr::Post(
-            cpr::Url{ "https://passport-api.mihoyo.com/account/ma-cn-verifier/app/createAuthTicketByGameBiz" },
-            cpr::Parameters{ { "game_biz", biz }, { "stoken", stoken.data() }, { "uid", uid.data() }, { "mid", mid.data() } },
+            cpr::Url{ ticketUrl },
             cpr::Header{ { "x-rpc-client_type", "3" }, { "x-rpc-app_id", "ddxf5dufpuyo" }, { "x-rpc-device_id", device_id } });
         LogScanDebug(biz, "passport/createAuthTicketByGameBiz", lenInfo, r3.text);
     }
