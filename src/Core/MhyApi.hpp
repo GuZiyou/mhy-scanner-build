@@ -419,6 +419,80 @@ inline void LogScanDebug(const std::string_view tag, const std::string_view url,
          << "resp: " << resp << "\n";
 }
 
+/* 诊断：确认失败时，把常见的凭证/请求头组合各试一遍并写日志。
+   仅用于定位（-502 究竟是 Cookie 字段、拼法还是 app_id/client_type 的问题）。 */
+inline void DiagnoseConfirmQRLogin(const std::string_view passportQrUrl,
+                                   const std::string_view stoken, const std::string_view mid)
+{
+    const auto [ticket, tokenTypes] = ParseQrTicket(passportQrUrl);
+    if (ticket.empty())
+    {
+        return;
+    }
+    const std::string tk{ ticket };
+    const std::string tt{ tokenTypes.empty() ? std::string{ "1" } : tokenTypes };
+
+    struct Variant
+    {
+        const char* tag;
+        const char* endpoint;
+        const char* appId;
+        std::string cookie;
+        std::string body;
+        const char* clientType;
+    };
+
+    const std::string bodyStr{ std::format(R"({{"ticket":"{}","token_types":"{}"}})", tk, tt) };
+    const std::string bodyNum{ std::format(R"({{"ticket":"{}","token_types":{}}})", tk, tt) };
+    const std::string bodyOnly{ std::format(R"({{"ticket":"{}"}})", tk) };
+    const std::string st{ stoken };
+    const std::string md{ mid };
+
+    const std::vector<Variant> variants{
+        { "d1 scan   bll8 cookie(;mid)      ", api::mhy::passport::app_scan_qr_login, "bll8iq97cem8",
+          std::format("stoken={};mid={}", st, md), bodyStr, nullptr },
+        { "d2 confirm bll8 cookie(;mid)      ", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+          std::format("stoken={};mid={}", st, md), bodyStr, nullptr },
+        { "d3 confirm bll8 cookie(; mid 空格)", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+          std::format("stoken={}; mid={}", st, md), bodyStr, nullptr },
+        { "d4 confirm bll8 stoken_v2 字段     ", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+          std::format("stoken_v2={};mid={}", st, md), bodyStr, nullptr },
+        { "d5 confirm bll8 account_id+stoken  ", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+          std::format("account_id={};stoken={};mid={}", md, st, md), bodyStr, nullptr },
+        { "d6 confirm bll8 ltoken/ltuid        ", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+          std::format("ltoken={};ltuid={}", st, md), bodyStr, nullptr },
+        { "d7 confirm dw9y cookie(;mid)        ", api::mhy::passport::app_confirm_qr_login, "dw9y09jqjpxc",
+          std::format("stoken={};mid={}", st, md), bodyStr, nullptr },
+        { "d8 confirm bll8 client_type=3       ", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+          std::format("stoken={};mid={}", st, md), bodyStr, "3" },
+        { "d9 confirm bll8 token_types 数字    ", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+          std::format("stoken={};mid={}", st, md), bodyNum, nullptr },
+        { "d10 confirm bll8 只发 ticket        ", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+          std::format("stoken={};mid={}", st, md), bodyOnly, nullptr },
+        { "d11 confirm bll8 无 Cookie          ", api::mhy::passport::app_confirm_qr_login, "bll8iq97cem8",
+          std::string{}, bodyStr, nullptr },
+    };
+
+    for (const auto& v : variants)
+    {
+        cpr::Header header{
+            { "Content-Type", "application/json" },
+            { "x-rpc-app_id", v.appId },
+            { "x-rpc-device_id", device_id }
+        };
+        if (!v.cookie.empty())
+        {
+            header["Cookie"] = v.cookie;
+        }
+        if (v.clientType != nullptr)
+        {
+            header["x-rpc-client_type"] = v.clientType;
+        }
+        const auto response = cpr::Post(cpr::Url{ v.endpoint }, cpr::Body{ v.body }, header);
+        LogScanDebug(v.tag, v.endpoint, v.body, response.text);
+    }
+}
+
 /* 新接口共用：Cookie 里带账号的 stoken/mid，头里带 web 的 app id */
 inline cpr::Header GetScanConfirmHeader(const std::string_view stoken, const std::string_view mid)
 {
@@ -473,7 +547,12 @@ inline bool ConfirmQRLogin(const std::string_view passportQrUrl, const std::stri
 
     LogScanDebug("confirmQRLogin", "passport/app/confirmQRLogin", body, response.text);
     const auto j = nlohmann::json::parse(response.text, nullptr, false);
-    return !j.is_discarded() && j.value("retcode", -1) == 0;
+    if (j.is_discarded() || j.value("retcode", -1) != 0)
+    {
+        DiagnoseConfirmQRLogin(passportQrUrl, stoken, mid);   /* 诊断：把参数矩阵写进日志 */
+        return false;
+    }
+    return true;
 }
 
 /* 扫码流程的第一步：仍然要调游戏侧的 combo/panda scan，但必须带上
