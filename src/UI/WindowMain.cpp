@@ -220,7 +220,6 @@ void WindowMain::pBtstartScreen(bool clicked)
                 emit AccountError();
                 return;
             }
-            DiagnoseStoken(stoken, mid, uid);   /* 诊断：探测换取 game token 的两条路径 */
             t1.mid = mid;
             t1.setServerType(ServerType::Official);
             t1.setLoginInfo(uid, stoken);
@@ -285,7 +284,6 @@ void WindowMain::pBtStream(bool clicked)
                 emit AccountError();
                 return;
             }
-            DiagnoseStoken(stoken, mid, uid);   /* 诊断：探测换取 game token 的两条路径 */
             t2.mid = mid;
             t2.setServerType(ServerType::Official);
             t2.setLoginInfo(uid, stoken);

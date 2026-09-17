@@ -74,15 +74,9 @@ inline cpr::Header GetRequestHeader()
 inline void LogScanDebug(const std::string_view tag, const std::string_view url,
                          const std::string_view body, const std::string_view resp)
 {
-    std::ofstream file{ "./Config/api_debug.log", std::ios::app };
-    if (!file)
-    {
-        return;
-    }
-    file << "----- " << tag << " -----\n"
-         << "url : " << url << "\n"
-         << "body: " << body << "\n"
-         << "resp: " << resp << "\n";
+    /* 诊断已关闭：原先写 ./Config/api_debug.log，其中含 cookie_token 等敏感响应。
+       保留函数签名以便不动各调用点；需要排查时再打开。 */
+    (void)tag; (void)url; (void)body; (void)resp;
 }
 
 /* ---------------------------------------------------------------------- *

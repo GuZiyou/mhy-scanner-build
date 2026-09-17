@@ -1,4 +1,4 @@
-﻿name: Windows Build
+name: Windows Build
 
 on:
   push:
@@ -63,10 +63,24 @@ jobs:
         run: |
           cmake --install build --config ${{ env.BUILD_CONFIGURATION }}
 
-      - name: Create ZIP
+      - name: Trim debug symbols (halves artifact size and zip time)
+        shell: pwsh
         run: |
-          powershell Compress-Archive -Path "${{ env.INSTALL_DIR }}\*" -DestinationPath "${{ github.workspace }}\${{ env.ZIP_NAME }}"
+          $n = 0
+          Get-ChildItem -Path "${{ env.INSTALL_DIR }}" -Recurse -Filter *.pdb -ErrorAction SilentlyContinue |
+            ForEach-Object { Remove-Item $_.FullName -Force; $n++ }
+          Write-Host "removed $n pdb file(s)"
 
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          $zip = "${{ github.workspace }}\${{ env.ZIP_NAME }}"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          $sevenZip = Join-Path $env:ProgramFiles '7-Zip\7z.exe'
+          if (-not (Test-Path $sevenZip)) { $sevenZip = '7z' }
+          & $sevenZip a -tzip -mx5 -bso0 -bsp0 $zip "${{ env.INSTALL_DIR }}\*"
+          if ($LASTEXITCODE -ne 0) { throw "7z failed with exit code $LASTEXITCODE" }
+          Write-Host "zip size: $([math]::Round((Get-Item $zip).Length/1MB,1)) MB"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
