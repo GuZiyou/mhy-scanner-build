@@ -604,6 +604,46 @@ inline cpr::Header GetScanConfirmHeader(const std::string_view stoken, const std
     };
 }
 
+/* ★ 实测（抓包逐字对照 1.16.0）：请求体里的 token_types 必须是【字符串数组】：
+       {"ticket":"<tk>","token_types":["1"]}
+   写成字符串 "1" 或数字 1，网关都只回笼统的
+       {"retcode":-502,"message":"Something went wrong...please retry later"}
+   这一点卡了很久：所有请求头/凭据变体都试过，唯一差的就是这个类型。 */
+inline nlohmann::json TokenTypesArray(const std::string_view tokenTypes)
+{
+    nlohmann::json arr = nlohmann::json::array();
+    const std::string_view s = tokenTypes;
+    size_t start = 0;
+    while (true)
+    {
+        const size_t comma = s.find(',', start);
+        const size_t end = comma == std::string_view::npos ? s.size() : comma;
+        std::string_view piece = s.substr(start, end - start);
+        while (!piece.empty() && (piece.front() == ' ' || piece.front() == '"'))
+        {
+            piece.remove_prefix(1);
+        }
+        while (!piece.empty() && (piece.back() == ' ' || piece.back() == '"'))
+        {
+            piece.remove_suffix(1);
+        }
+        if (!piece.empty())
+        {
+            arr.push_back(std::string{ piece });
+        }
+        if (comma == std::string_view::npos)
+        {
+            break;
+        }
+        start = comma + 1;
+    }
+    if (arr.empty())
+    {
+        arr.push_back("1");
+    }
+    return arr;
+}
+
 inline bool ScanQRLogin(const std::string_view passportQrUrl, const std::string_view stoken,
                         const std::string_view mid)
 {
@@ -615,7 +655,7 @@ inline bool ScanQRLogin(const std::string_view passportQrUrl, const std::string_
 
     const std::string body{ nlohmann::json{
         { "ticket", ticket },
-        { "token_types", tokenTypes } }
+        { "token_types", TokenTypesArray(tokenTypes) } }
                                 .dump() };
     const auto response = cpr::Post(
         cpr::Url{ api::mhy::passport::app_scan_qr_login },
@@ -638,7 +678,7 @@ inline bool ConfirmQRLogin(const std::string_view passportQrUrl, const std::stri
 
     const std::string body{ nlohmann::json{
         { "ticket", ticket },
-        { "token_types", tokenTypes } }
+        { "token_types", TokenTypesArray(tokenTypes) } }
                                 .dump() };
     const auto response = cpr::Post(
         cpr::Url{ api::mhy::passport::app_confirm_qr_login },

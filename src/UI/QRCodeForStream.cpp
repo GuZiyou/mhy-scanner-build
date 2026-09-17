@@ -501,10 +501,15 @@ void QRCodeForStream::continueLastLogin()
         using enum ServerType;
     case Official:
     {
-        /* 先换当前游戏的 game auth ticket（token 必须是它，不能直接用 stoken） */
-        const std::string authTicket{ CreateAuthTicketByGameBiz(GameBizOf(gameType), gameToken, uid, mid) };
-        bool b = PandaConfirmQRLogin(confirmUrl, uid, authTicket.empty() ? gameToken : authTicket,
-                                     lastTicket, gameType);
+        /* 1.16.0 的真实做法（抓包逐字证实）：
+           ① passport scanQRLogin 标记"已被扫描" ② passport confirmQRLogin 完成登录。
+           凭据用账号的 stoken(gameToken) + mid（进 Cookie），ticket/token_types 取自 panda scan
+           返回的 passport_qr_url。注意 body 里 token_types 必须是【数组】，见 TokenTypesArray。 */
+        bool b = ScanQRLogin(lastPassportQrUrl, gameToken, mid);
+        if (b)
+        {
+            b = ConfirmQRLogin(lastPassportQrUrl, gameToken, mid);
+        }
         if (b)
         {
             Q_EMIT loginResults(ScanRet::SUCCESS);
